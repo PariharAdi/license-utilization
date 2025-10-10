@@ -1,15 +1,21 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { AuthState, SalesforceUser } from '../types/auth';
-import { apiService } from '../services/apiService';
-import { API_ENDPOINTS } from '../config/api';
+import React, {
+  createContext,
+  useContext,
+  useReducer,
+  useEffect,
+  ReactNode,
+} from "react";
+import { AuthState, SalesforceUser } from "../types/auth";
+import { apiService } from "../services/apiService";
+import { API_ENDPOINTS } from "../config/api";
 
 // Auth actions
 type AuthAction =
-  | { type: 'LOGIN_START' }
-  | { type: 'LOGIN_SUCCESS'; payload: SalesforceUser }
-  | { type: 'LOGIN_FAILURE'; payload: string }
-  | { type: 'LOGOUT' }
-  | { type: 'CLEAR_ERROR' };
+  | { type: "LOGIN_START" }
+  | { type: "LOGIN_SUCCESS"; payload: SalesforceUser }
+  | { type: "LOGIN_FAILURE"; payload: string }
+  | { type: "LOGOUT" }
+  | { type: "CLEAR_ERROR" };
 
 // Initial state
 const initialState: AuthState = {
@@ -18,29 +24,29 @@ const initialState: AuthState = {
   accessToken: null,
   instanceUrl: null,
   isLoading: true,
-  error: null
+  error: null,
 };
 
 // Auth reducer
 function authReducer(state: AuthState, action: AuthAction): AuthState {
   switch (action.type) {
-    case 'LOGIN_START':
+    case "LOGIN_START":
       return {
         ...state,
         isLoading: true,
-        error: null
+        error: null,
       };
-    case 'LOGIN_SUCCESS':
+    case "LOGIN_SUCCESS":
       return {
         ...state,
         isAuthenticated: true,
         user: action.payload,
-        accessToken: 'managed-by-backend', // Backend manages tokens via cookies
-        instanceUrl: 'managed-by-backend',
+        accessToken: "managed-by-backend", // Backend manages tokens via cookies
+        instanceUrl: "managed-by-backend",
         isLoading: false,
-        error: null
+        error: null,
       };
-    case 'LOGIN_FAILURE':
+    case "LOGIN_FAILURE":
       return {
         ...state,
         isAuthenticated: false,
@@ -48,17 +54,17 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
         accessToken: null,
         instanceUrl: null,
         isLoading: false,
-        error: action.payload
+        error: action.payload,
       };
-    case 'LOGOUT':
+    case "LOGOUT":
       return {
         ...initialState,
-        isLoading: false
+        isLoading: false,
       };
-    case 'CLEAR_ERROR':
+    case "CLEAR_ERROR":
       return {
         ...state,
-        error: null
+        error: null,
       };
     default:
       return state;
@@ -90,8 +96,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Check if backend is available
         const isBackendAvailable = await apiService.healthCheck();
         if (!isBackendAvailable) {
-          console.warn('Backend is not available, using mock data mode');
-          dispatch({ type: 'LOGOUT' });
+          console.warn("Backend is not available, using mock data mode");
+          dispatch({ type: "LOGOUT" });
           return;
         }
 
@@ -101,16 +107,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           // Get full user info
           const userResponse = await apiService.get(API_ENDPOINTS.auth.me);
           if (userResponse.success && userResponse.data) {
-            dispatch({ type: 'LOGIN_SUCCESS', payload: userResponse.data.user });
+            dispatch({
+              type: "LOGIN_SUCCESS",
+              payload: userResponse.data.user,
+            });
           } else {
-            dispatch({ type: 'LOGOUT' });
+            dispatch({ type: "LOGOUT" });
           }
         } else {
-          dispatch({ type: 'LOGOUT' });
+          dispatch({ type: "LOGOUT" });
         }
       } catch (error) {
-        console.error('Session check failed:', error);
-        dispatch({ type: 'LOGOUT' });
+        console.error("Session check failed:", error);
+        dispatch({ type: "LOGOUT" });
       }
     };
 
@@ -119,7 +128,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async () => {
     try {
-      dispatch({ type: 'LOGIN_START' });
+      dispatch({ type: "LOGIN_START" });
 
       // Get Salesforce authorization URL from backend
       const response = await apiService.get(API_ENDPOINTS.auth.salesforce);
@@ -127,43 +136,50 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Redirect to Salesforce
         window.location.href = response.data.authUrl;
       } else {
-        throw new Error(response.error || 'Failed to get authorization URL');
+        throw new Error(response.error || "Failed to get authorization URL");
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Login failed';
-      dispatch({ type: 'LOGIN_FAILURE', payload: errorMessage });
+      const errorMessage =
+        error instanceof Error ? error.message : "Login failed";
+      dispatch({ type: "LOGIN_FAILURE", payload: errorMessage });
     }
   };
 
   const logout = async () => {
     try {
       await apiService.post(API_ENDPOINTS.auth.logout);
+      // Clear auth state (adjust based on your state management)
+      dispatch({ type: "LOGOUT" });
+      // Optional: Clear local storage or cookies
+      localStorage.removeItem("authToken");
+      // Redirect to login
+      window.location.href = "/login";
     } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
-      dispatch({ type: 'LOGOUT' });
+      // Handle error, e.g., show notification
+      console.error("Logout failed:", error);
     }
   };
 
   const clearError = () => {
-    dispatch({ type: 'CLEAR_ERROR' });
+    dispatch({ type: "CLEAR_ERROR" });
   };
 
   const handleCallback = async (code: string, state: string) => {
     try {
-      dispatch({ type: 'LOGIN_START' });
+      dispatch({ type: "LOGIN_START" });
 
       // The backend handles the callback automatically via the redirect
       // We just need to check if we're now authenticated
       const response = await apiService.get(API_ENDPOINTS.auth.me);
       if (response.success && response.data) {
-        dispatch({ type: 'LOGIN_SUCCESS', payload: response.data.user });
+        dispatch({ type: "LOGIN_SUCCESS", payload: response.data.user });
       } else {
-        throw new Error(response.error || 'Authentication failed');
+        throw new Error(response.error || "Authentication failed");
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
-      dispatch({ type: 'LOGIN_FAILURE', payload: errorMessage });
+      const errorMessage =
+        error instanceof Error ? error.message : "Authentication failed";
+      dispatch({ type: "LOGIN_FAILURE", payload: errorMessage });
     }
   };
 
@@ -172,21 +188,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     login,
     logout,
     clearError,
-    handleCallback
+    handleCallback,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 // Custom hook to use auth context
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };

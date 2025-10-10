@@ -194,3 +194,19 @@ class ApiService {
 }
 
 export const apiService = new ApiService();
+
+export const logout = async (): Promise<void> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.auth.logout}`, {
+      method: 'POST',
+      headers: API_CONFIG.headers,
+      credentials: API_CONFIG.credentials,
+    });
+    if (!response.ok) {
+      throw new Error('Logout failed');
+    }
+  } catch (error) {
+    console.error('Logout error:', error);
+    throw error;
+  }
+};
