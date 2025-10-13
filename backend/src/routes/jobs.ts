@@ -1,25 +1,24 @@
 import { Router } from 'express';
 import { JobController } from '../controllers/JobController';
-import { authenticate, requireAdmin } from '../middleware/auth';
-import { syncLimiter, createUserLimiter } from '../middleware/rateLimiting';
 
 const router = Router();
 
-// All job routes require authentication
-router.use(authenticate);
+// GET /api/jobs/stats - Get job queue statistics
+router.get('/stats', JobController.getJobStats);
 
-// Get job statistics (admin only)
-router.get('/stats', requireAdmin, JobController.getJobStats);
+// POST /api/jobs/sync - Trigger manual data sync
+router.post('/sync', JobController.triggerSync);
 
-// Get system health (available to all authenticated users)
+// POST /api/jobs/report - Trigger manual report generation
+router.post('/report', JobController.triggerReport);
+
+// POST /api/jobs/cleanup - Trigger manual cleanup
+router.post('/cleanup', JobController.triggerCleanup);
+
+// POST /api/jobs/schedule/:jobName/:action - Manage scheduled jobs
+router.post('/schedule/:jobName/:action', JobController.manageScheduledJob);
+
+// GET /api/jobs/health - Get system health status
 router.get('/health', JobController.getSystemHealth);
-
-// Manual job triggers (admin only with rate limiting)
-router.post('/sync', requireAdmin, syncLimiter, JobController.triggerSync);
-router.post('/report', requireAdmin, createUserLimiter(5, 60 * 60 * 1000), JobController.triggerReport); // 5 reports per hour
-router.post('/cleanup', requireAdmin, createUserLimiter(3, 60 * 60 * 1000), JobController.triggerCleanup); // 3 cleanups per hour
-
-// Scheduled job management (admin only)
-router.post('/schedule/:jobName/:action', requireAdmin, JobController.manageScheduledJob);
 
 export default router;

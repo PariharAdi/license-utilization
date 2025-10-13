@@ -2,28 +2,22 @@ import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { ApiResponse } from '../types';
 
-// Security headers middleware
-export const securityHeaders = (req: Request, res: Response, next: NextFunction): void => {
-  // Content Security Policy
-  res.setHeader('Content-Security-Policy',
-    "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline'; " +
-    "style-src 'self' 'unsafe-inline'; " +
-    "img-src 'self' data: https:; " +
-    "connect-src 'self' https://login.salesforce.com https://*.salesforce.com; " +
-    "font-src 'self'; " +
-    "frame-ancestors 'none';"
-  );
+// Security middleware
+export const securityMiddleware = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  // Remove sensitive headers
+  res.removeHeader('X-Powered-By');
 
-  // Other security headers
-  res.setHeader('X-Frame-Options', 'DENY');
+  // Set security headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
 
-  // Remove powered-by header
-  res.removeHeader('X-Powered-By');
+  // Trust proxy for IP logging
+  req.app.set('trust proxy', 1);
 
   next();
 };
@@ -98,7 +92,7 @@ export const ipWhitelist = (allowedIPs: string[]) => {
 
     // In development, allow localhost
     if (process.env.NODE_ENV === 'development' &&
-        (clientIP.includes('127.0.0.1') || clientIP.includes('::1'))) {
+      (clientIP.includes('127.0.0.1') || clientIP.includes('::1'))) {
       return next();
     }
 

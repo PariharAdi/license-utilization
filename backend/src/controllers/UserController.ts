@@ -1,164 +1,64 @@
 import { Request, Response } from 'express';
-import { UserModel } from '../models/User';
-import { ApiResponse, FilterOptions, PaginatedResponse, User } from '../types';
+import SalesforceDataService from '../services/SalesforceDataService';
+import { logger } from '../utils/logger';
+import { ApiResponse } from '../types';
+
+const salesforceService = SalesforceDataService.getInstance();
 
 export class UserController {
   /**
-   * Get all users for an organization
+   * Get all users with optional filtering
    * GET /api/users
    */
   static async getUsers(req: Request, res: Response): Promise<void> {
     try {
-      const organization = req.organization;
-      const {
-        page = 1,
-        limit = 50,
-        profile,
-        role,
-        licenseType,
-        usageLevel,
-        dateRange,
-        isActive,
-        search,
-      } = req.query as any;
+      const { license, status, profile, role, limit, offset } = req.query;
 
-      // Build filters
-      const filters: FilterOptions = {};
+      logger.info('🔄 Fetching users from Salesforce...');
 
+      let users = await salesforceService.getUsers();
+
+      // Apply filters
+      if (license) {
+        users = users.filter(user => user.license === license);
+      }
+      if (status) {
+        users = users.filter(user => user.status === status);
+      }
       if (profile) {
-        filters.profile = Array.isArray(profile) ? profile : [profile];
+        users = users.filter(user => user.profile === profile);
       }
-
       if (role) {
-        filters.role = Array.isArray(role) ? role : [role];
+        users = users.filter(user => user.role === role);
       }
 
-      if (licenseType) {
-        filters.licenseType = Array.isArray(licenseType) ? licenseType : [licenseType];
-      }
-
-      if (usageLevel) {
-        filters.usageLevel = Array.isArray(usageLevel) ? usageLevel : [usageLevel];
-      }
-
-      if (dateRange) {
-        filters.dateRange = dateRange;
-      }
-
-      if (isActive !== undefined) {
-        filters.isActive = isActive === 'true';
-      }
-
-      // Get paginated users
-      const result = await UserModel.findByOrgId(
-        organization.id,
-        filters,
-        parseInt(page),
-        parseInt(limit)
-      );
-
-      const response: ApiResponse<PaginatedResponse<User>> = {
-        success: true,
-        data: result,
-      };
-
-      res.json(response);
-    } catch (error) {
-      console.error('Error getting users:', error);
-
-      const response: ApiResponse = {
-        success: false,
-        error: 'Failed to retrieve users',
-      };
-
-      res.status(500).json(response);
-    }
-  }
-
-  /**
-   * Get a specific user by ID
-   * GET /api/users/:userId
-   */
-  static async getUser(req: Request, res: Response): Promise<void> {
-    try {
-      const { userId } = req.params;
-      const organization = req.organization;
-
-      const user = await UserModel.findById(userId);
-
-      if (!user) {
-        const response: ApiResponse = {
-          success: false,
-          error: 'User not found',
-        };
-        res.status(404).json(response);
-        return;
-      }
-
-      // Verify user belongs to the same organization
-      if (user.organizationId !== organization.id) {
-        const response: ApiResponse = {
-          success: false,
-          error: 'Access denied',
-        };
-        res.status(403).json(response);
-        return;
-      }
-
-      const response: ApiResponse<User> = {
-        success: true,
-        data: user,
-      };
-
-      res.json(response);
-    } catch (error) {
-      console.error('Error getting user:', error);
-
-      const response: ApiResponse = {
-        success: false,
-        error: 'Failed to retrieve user',
-      };
-
-      res.status(500).json(response);
-    }
-  }
-
-  /**
-   * Get user filter options
-   * GET /api/users/filters
-   */
-  static async getFilterOptions(req: Request, res: Response): Promise<void> {
-    try {
-      const organization = req.organization;
-
-      const [profiles, roles, licenseTypes] = await Promise.all([
-        UserModel.getUniqueProfiles(organization.id),
-        UserModel.getUniqueRoles(organization.id),
-        UserModel.getUniqueLicenseTypes(organization.id),
-      ]);
+      // Apply pagination
+      const startIndex = offset ? parseInt(offset as string) : 0;
+      const endIndex = limit ? startIndex + parseInt(limit as string) : users.length;
+      const paginatedUsers = users.slice(startIndex, endIndex);
 
       const response: ApiResponse = {
         success: true,
         data: {
-          profiles,
-          roles,
-          licenseTypes,
-          usageLevels: ['Heavy', 'Medium', 'Light', 'Inactive'],
-          dateRanges: [
-            { value: '90', label: 'Last 90 days' },
-            { value: '180', label: 'Last 180 days' },
-            { value: '365', label: 'Last 365 days' },
-          ],
-        },
+          data: paginatedUsers,
+          total: users.length,
+          filtered: paginatedUsers.length,
+          pagination: {
+            offset: startIndex,
+            limit: endIndex - startIndex,
+            hasMore: endIndex < users.length,
+          }
+        }
       };
 
+      logger.info(`✅ Successfully returned ${paginatedUsers.length} users (${users.length} total)`);
       res.json(response);
     } catch (error) {
-      console.error('Error getting filter options:', error);
+      logger.error('❌ Error fetching users:', error);
 
       const response: ApiResponse = {
         success: false,
-        error: 'Failed to retrieve filter options',
+        error: error instanceof Error ? error.message : 'Failed to fetch users',
       };
 
       res.status(500).json(response);
@@ -166,27 +66,88 @@ export class UserController {
   }
 
   /**
-   * Get user counts summary
+   * Get user by ID
+   * GET /api/users/:userId
+   */
+  static async getUserById(req: Request, res: Response): Promise<void> {
+    try {
+      const { userId } = req.params;
+
+      logger.info(`🔄 Fetching user: ${userId}`);
+
+      const user = await salesforceService.getUserById(userId);
+
+      const response: ApiResponse = {
+        success: true,
+        data: user,
+      };
+
+      logger.info(`✅ Successfully returned user: ${user.name}`);
+      res.json(response);
+    } catch (error) {
+      logger.error(`❌ Error fetching user ${req.params.userId}:`, error);
+
+      const response: ApiResponse = {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch user',
+      };
+
+      res.status(404).json(response);
+    }
+  }
+
+  /**
+   * Get user summary statistics
    * GET /api/users/summary
    */
   static async getUserSummary(req: Request, res: Response): Promise<void> {
     try {
-      const organization = req.organization;
+      logger.info('🔄 Fetching user summary...');
 
-      const counts = await UserModel.getUserCounts(organization.id);
+      const summary = await salesforceService.getUserSummary();
 
       const response: ApiResponse = {
         success: true,
-        data: counts,
+        data: summary,
       };
 
+      logger.info('✅ Successfully returned user summary');
       res.json(response);
     } catch (error) {
-      console.error('Error getting user summary:', error);
+      logger.error('❌ Error fetching user summary:', error);
 
       const response: ApiResponse = {
         success: false,
-        error: 'Failed to retrieve user summary',
+        error: error instanceof Error ? error.message : 'Failed to fetch user summary',
+      };
+
+      res.status(500).json(response);
+    }
+  }
+
+  /**
+   * Get filter options
+   * GET /api/users/filters
+   */
+  static async getFilterOptions(req: Request, res: Response): Promise<void> {
+    try {
+      logger.info('🔄 Fetching filter options...');
+
+      const options = await salesforceService.getFilterOptions();
+
+      const response: ApiResponse = {
+        success: true,
+        data: options,
+      };
+
+      logger.info('✅ Successfully returned filter options');
+      res.json(response);
+    } catch (error) {
+      logger.error('❌ Error fetching filter options:', error);
+
+      const response: ApiResponse = {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch filter options',
       };
 
       res.status(500).json(response);
@@ -199,72 +160,29 @@ export class UserController {
    */
   static async exportUsers(req: Request, res: Response): Promise<void> {
     try {
-      const organization = req.organization;
-      const { format = 'csv' } = req.query as any;
+      logger.info('🔄 Exporting users to CSV...');
 
-      // Build filters from query parameters
-      const filters: FilterOptions = {};
-      // ... (same filter building logic as getUsers)
+      const users = await salesforceService.getUsers();
 
-      // Get all users (no pagination for export)
-      const result = await UserModel.findByOrgId(
-        organization.id,
-        filters,
-        1,
-        10000 // Large limit for export
-      );
+      // Generate CSV content
+      const csvHeader = 'ID,Name,Username,Email,Status,License,Profile,Role,Last Login,Login Count,Objects Accessed\n';
+      const csvContent = users.map(user =>
+        `${user.id},${user.name},${user.username},${user.email},${user.status},${user.license},${user.profile},${user.role},${user.lastLogin},${user.loginCount},${user.objectsAccessed}`
+      ).join('\n');
 
-      if (format === 'csv') {
-        // Generate CSV
-        const csvHeaders = [
-          'Name',
-          'Email',
-          'Username',
-          'Profile',
-          'Role',
-          'License Type',
-          'Is Active',
-          'Last Login',
-          'Created At',
-        ];
+      const csv = csvHeader + csvContent;
 
-        const csvRows = result.data.map(user => [
-          `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-          user.email,
-          user.username,
-          user.profileName || '',
-          user.userRoleName || '',
-          user.licenseType || '',
-          user.isActive ? 'Yes' : 'No',
-          user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : '',
-          new Date(user.createdAt).toLocaleDateString(),
-        ]);
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=salesforce_users.csv');
+      res.send(csv);
 
-        const csvContent = [
-          csvHeaders.join(','),
-          ...csvRows.map(row =>
-            row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
-          ),
-        ].join('\n');
-
-        res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', 'attachment; filename="users-export.csv"');
-        res.send(csvContent);
-      } else {
-        // Return JSON for other formats
-        const response: ApiResponse = {
-          success: true,
-          data: result.data,
-        };
-
-        res.json(response);
-      }
+      logger.info(`✅ Successfully exported ${users.length} users to CSV`);
     } catch (error) {
-      console.error('Error exporting users:', error);
+      logger.error('❌ Error exporting users:', error);
 
       const response: ApiResponse = {
         success: false,
-        error: 'Failed to export users',
+        error: error instanceof Error ? error.message : 'Failed to export users',
       };
 
       res.status(500).json(response);

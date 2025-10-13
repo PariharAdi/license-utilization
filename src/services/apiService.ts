@@ -1,4 +1,8 @@
 import { API_BASE_URL, API_CONFIG } from '../config/api';
+import type { User } from '../types';
+import SalesforceApiService from './SalesforceApiService';
+
+const salesforceService = SalesforceApiService.getInstance();
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -184,7 +188,7 @@ class ApiService {
   // Check if backend is available
   async healthCheck(): Promise<boolean> {
     try {
-      const response = await this.get('/health');
+      const response = await this.get('/api/health');
       return response.success;
     } catch (error) {
       console.warn('Backend health check failed:', error);
@@ -193,20 +197,115 @@ class ApiService {
   }
 }
 
+/**
+ * Transform Salesforce user to application user format
+ */
+function transformSalesforceUser(sfUser: any): User {
+  return {
+    id: sfUser.Id,
+    name: sfUser.Name,
+    username: sfUser.Username,
+    email: sfUser.Email,
+    status: sfUser.IsActive ? 'active' : 'inactive',
+    license: sfUser.Profile?.Name || 'Unknown',
+    profile: sfUser.Profile?.Name || 'Unknown',
+    role: sfUser.UserRole?.Name || 'No Role',
+    lastLogin: new Date().toISOString(),
+    loginCount: 0,
+    objectsAccessed: 0,
+  };
+}
+
 export const apiService = new ApiService();
 
-export const logout = async (): Promise<void> => {
+export const getUsers = async (filters?: {
+  license?: string;
+  status?: string;
+  profile?: string;
+  role?: string;
+}): Promise<User[]> => {
   try {
-    const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.auth.logout}`, {
-      method: 'POST',
-      headers: API_CONFIG.headers,
-      credentials: API_CONFIG.credentials,
-    });
-    if (!response.ok) {
-      throw new Error('Logout failed');
+    let sfUsers;
+
+    if (filters && Object.keys(filters).length > 0) {
+      sfUsers = await salesforceService.getFilteredUsers(filters);
+    } else {
+      sfUsers = await salesforceService.getUsers();
     }
+
+    return sfUsers.map(transformSalesforceUser);
   } catch (error) {
-    console.error('Logout error:', error);
+    console.error('Error fetching users from Salesforce:', error);
     throw error;
   }
+};
+
+export const getUserById = async (userId: string): Promise<User> => {
+  try {
+    const sfUser = await salesforceService.getUserById(userId);
+    return transformSalesforceUser(sfUser);
+  } catch (error) {
+    console.error('Error fetching user details from Salesforce:', error);
+    throw error;
+  }
+};
+
+export const getUserSummary = async () => {
+  try {
+    const users = await getUsers();
+
+    const totalUsers = users.length;
+    const activeUsers = users.filter(u => u.status === 'active').length;
+    const inactiveUsers = totalUsers - activeUsers;
+
+    const licenseDistribution = users.reduce((acc, user) => {
+      acc[user.license] = (acc[user.license] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return {
+      totalUsers,
+      activeUsers,
+      inactiveUsers,
+      utilizationRate: totalUsers > 0 ? (activeUsers / totalUsers) * 100 : 0,
+      licenseDistribution,
+    };
+  } catch (error) {
+    console.error('Error fetching user summary from Salesforce:', error);
+    throw error;
+  }
+};
+
+export const getFilterOptions = async () => {
+  try {
+    const users = await getUsers();
+
+    return {
+      licenses: [...new Set(users.map(u => u.license))],
+      profiles: [...new Set(users.map(u => u.profile))],
+      roles: [...new Set(users.map(u => u.role).filter(r => r !== 'No Role'))],
+      statuses: ['active', 'inactive'],
+    };
+  } catch (error) {
+    console.error('Error fetching filter options from Salesforce:', error);
+    throw error;
+  }
+};
+
+export const exportUsers = async (users: User[]): Promise<Blob> => {
+  const headers = ['Name', 'Username', 'Email', 'Status', 'License', 'Profile', 'Role'];
+  const csvContent = [
+    headers.join(','),
+    ...users.map(u =>
+      [u.name, u.username, u.email, u.status, u.license, u.profile, u.role]
+        .map(field => `"${field}"`)
+        .join(',')
+    ),
+  ].join('\n');
+
+  return new Blob([csvContent], { type: 'text/csv' });
+};
+
+export const logout = async (): Promise<void> => {
+  salesforceService.clearToken();
 };

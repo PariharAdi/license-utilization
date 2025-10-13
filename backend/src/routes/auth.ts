@@ -1,17 +1,15 @@
 import { Router } from 'express';
 import { AuthController } from '../controllers/AuthController';
-import { authenticate, optionalAuthenticate } from '../middleware/auth';
 
 const router = Router();
 
-// Public routes
-router.get('/salesforce', AuthController.initiateSalesforceAuth);
-router.get('/salesforce/callback', AuthController.handleSalesforceCallback);
-router.get('/status', optionalAuthenticate, AuthController.checkAuthStatus);
+// POST /api/auth/login - Authenticate with Salesforce
+router.post('/login', AuthController.login);
 
-// Protected routes
-router.get('/me', authenticate, AuthController.getCurrentUser);
-router.post('/refresh', authenticate, AuthController.refreshToken);
-router.post('/logout', optionalAuthenticate, AuthController.logout);
+// GET /api/auth/status - Check authentication status
+router.get('/status', AuthController.getAuthStatus);
+
+// POST /api/auth/logout - Logout
+router.post('/logout', AuthController.logout);
 
 export default router;
