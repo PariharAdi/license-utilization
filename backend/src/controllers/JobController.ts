@@ -2,23 +2,33 @@ import { Request, Response } from 'express';
 import { logger } from '../utils/logger';
 import { ApiResponse } from '../types';
 import { jobQueue } from '../services/JobQueue';
-import { scheduledJobs } from '../services/ScheduledJobs';
+import { scheduledJobs, ScheduledJobs } from '../services/ScheduledJobs';
+import { User } from '../models/User';
 
 
 export class JobController {
+  // Helper to extract user and organization from request (minimize use of `any` casts)
+  private static getRequestContext(req: Request): { user: any; organization: any } {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r: any = req;
+    return {
+      user: r.user || { id: 'mock-user' },
+      organization: r.organization || { id: 'mock-org' },
+    };
+  }
   /**
    * Get job queue statistics
    * GET /api/jobs/stats
    */
   static async getJobStats(req: Request, res: Response): Promise<void> {
     try {
-      const user = (req as any).user || { id: 'mock-user' };
+      const user = (req as User) || { id: 'mock-user' };
 
       // Get queue statistics
       const queueStats = await jobQueue.getQueueStats();
 
       // Get scheduled job status
-      const scheduledJobStatus = scheduledJobs.getJobStatus();
+      const scheduledJobStatus = ScheduledJobs.getJobStatus();
 
       const response: ApiResponse = {
         success: true,
@@ -29,7 +39,7 @@ export class JobController {
         },
       };
 
-      logger.info(`User ${user.id} viewed job statistics`);
+      logger.info(`User ${user} viewed job statistics`);
 
       res.json(response);
     } catch (error) {
@@ -61,11 +71,12 @@ export class JobController {
           success: false,
           error: `Invalid sync type. Must be one of: ${validSyncTypes.join(', ')}`,
         };
-        return res.status(400).json(response);
+        res.status(400).json(response);
+        return;
       }
 
-      // Trigger the sync job
-      await scheduledJobs.triggerDataSync(user.id, organization.id, syncType);
+      // Trigger the sync job (static helper on ScheduledJobs)
+      await ScheduledJobs.triggerDataSync(user.id, organization.id, syncType);
 
       const response: ApiResponse = {
         success: true,
@@ -115,7 +126,8 @@ export class JobController {
           success: false,
           error: `Invalid report type. Must be one of: ${validReportTypes.join(', ')}`,
         };
-        return res.status(400).json(response);
+        res.status(400).json(response);
+        return;
       }
 
       // Validate format
@@ -125,11 +137,12 @@ export class JobController {
           success: false,
           error: `Invalid format. Must be one of: ${validFormats.join(', ')}`,
         };
-        return res.status(400).json(response);
+        res.status(400).json(response);
+        return;
       }
 
-      // Trigger the report generation job
-      await scheduledJobs.triggerReportGeneration(
+      // Trigger the report generation job (static helper on ScheduledJobs)
+      await ScheduledJobs.triggerReportGeneration(
         user.id,
         organization.id,
         reportType,
@@ -180,11 +193,12 @@ export class JobController {
           success: false,
           error: `Invalid cleanup type. Must be one of: ${validTypes.join(', ')}`,
         };
-        return res.status(400).json(response);
+        res.status(400).json(response);
+        return;
       }
 
-      // Trigger the cleanup job
-      await scheduledJobs.triggerCleanup(type, olderThanDays);
+      // Trigger the cleanup job (static helper on ScheduledJobs)
+      await ScheduledJobs.triggerCleanup(type, olderThanDays);
 
       const response: ApiResponse = {
         success: true,
@@ -227,7 +241,8 @@ export class JobController {
           success: false,
           error: `Invalid action. Must be one of: ${validActions.join(', ')}`,
         };
-        return res.status(400).json(response);
+        res.status(400).json(response);
+        return;
       }
 
       let result = false;
@@ -279,7 +294,7 @@ export class JobController {
 
       // Get system health metrics
       const queueStats = await jobQueue.getQueueStats();
-      const scheduledJobStatus = scheduledJobs.getJobStatus();
+      const scheduledJobStatus = ScheduledJobs.getJobStatus();
 
       // Check memory usage
       const memoryUsage = process.memoryUsage();

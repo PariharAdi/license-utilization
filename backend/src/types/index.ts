@@ -3,6 +3,9 @@ export interface ApiResponse<T = any> {
   data?: T;
   error?: string;
   message?: string;
+  // optional diagnostic fields used in controllers
+  details?: any;
+  timestamp?: Date;
 }
 
 export interface User {
@@ -10,13 +13,15 @@ export interface User {
   name: string;
   username: string;
   email: string;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | string;
   license: string;
   profile: string;
   role: string;
   lastLogin: string;
   loginCount: number;
   objectsAccessed: number;
+  organizationId?: string;
+  isActive?: boolean;
 }
 
 export interface SalesforceTokenResponse {
@@ -64,4 +69,47 @@ export interface AnalyticsData {
   licenseUtilization: LicenseUsage[];
   objectUsage: ObjectUsage[];
   userActivity: UserActivity[];
+}
+
+// Common pagination wrapper
+export interface PaginatedResponse<T = any> {
+  data: T[];
+  pagination: {
+    page?: number;
+    limit?: number;
+    total: number;
+    totalPages?: number;
+  };
+}
+
+export interface FilterOptions {
+  licenses?: string[];
+  profiles?: string[];
+  roles?: string[];
+  statuses?: string[];
+  // Singular forms used by some modules
+  profile?: string | string[];
+  role?: string | string[];
+  licenseType?: string | string[];
+  isActive?: boolean;
+}
+
+export interface Organization {
+  id: string;
+  orgName?: string;
+  salesforceOrgId?: string;
+}
+
+export interface JobStats {
+  name?: string;
+  waiting: number;
+  active: number;
+  completed: number;
+  failed: number;
+}
+
+export interface JobResult {
+  jobId: string;
+  status: string;
+  result?: any;
 }

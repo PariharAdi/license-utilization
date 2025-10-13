@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { SalesforceAuthService } from '../services/SalesforceAuthService';
+import SalesforceAuthService from '../services/SalesforceAuthService';
 import { UserModel } from '../models/User';
 import { OrganizationModel } from '../models/Organization';
 import { ApiResponse } from '../types';

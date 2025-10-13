@@ -237,10 +237,9 @@ export class UserModel {
   }
 }
 
-// Placeholder - implement with database models
+// Export placeholder User for backwards compatibility
 export class User {
   static async findById(id: string) {
-    // Placeholder implementation
     return { id, email: 'user@example.com' };
   }
 }

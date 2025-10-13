@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+import fetch, { RequestInit } from 'node-fetch';
 import { SALESFORCE_CONFIG } from '../config/salesforce';
 import { logger } from '../utils/logger';
 import { SalesforceTokenResponse } from '../types';
@@ -16,6 +16,29 @@ class SalesforceAuthService {
       SalesforceAuthService.instance = new SalesforceAuthService();
     }
     return SalesforceAuthService.instance;
+  }
+
+  // Static helpers used by other modules (placeholders)
+  static validateJWTToken(token: string): any {
+    // lightweight wrapper - real implementation may verify JWT signature
+    // Defer to jsonwebtoken at runtime if available
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const jwt = require('jsonwebtoken');
+    const secret = process.env.JWT_SECRET || '';
+    return jwt.verify(token, secret);
+  }
+
+  static async getStoredTokens(userId: string): Promise<null | { accessToken: string; refreshToken?: string; expiresAt?: Date }> {
+    return null;
+  }
+
+  static async refreshAccessToken(refreshToken: string): Promise<any> {
+    throw new Error('Refresh token flow not implemented');
+  }
+
+  static async storeTokens(user: any, tokens: any): Promise<void> {
+    // no-op placeholder
+    return;
   }
 
   /**
@@ -54,8 +77,10 @@ class SalesforceAuthService {
       this.accessToken = tokenData.access_token;
       this.instanceUrl = tokenData.instance_url;
 
-      // Set token expiry (Salesforce tokens typically last 2 hours)
-      this.tokenExpiry = new Date(Date.now() + 2 * 60 * 60 * 1000);
+      // Set token expiry. Prefer explicit expires_in from Salesforce when available.
+      // Some Salesforce responses include `expires_in` (seconds).
+      const expiresInSec = (tokenData as any).expires_in ? Number((tokenData as any).expires_in) : 2 * 60 * 60;
+      this.tokenExpiry = new Date(Date.now() + expiresInSec * 1000);
 
       logger.info('✅ Salesforce authentication successful');
       logger.info(`📍 Instance URL: ${this.instanceUrl}`);
@@ -118,7 +143,13 @@ class SalesforceAuthService {
   /**
    * Make authenticated API call to Salesforce
    */
-  async makeApiCall(endpoint: string, options: any = {}): Promise<any> {
+  /**
+   * Make authenticated API call to Salesforce. Retries once on 401 by default.
+   * @param endpoint API path (appended to instance URL)
+   * @param options fetch options (RequestInit)
+   * @param retries number of retries on 401 (default 1)
+   */
+  async makeApiCall(endpoint: string, options: RequestInit = {}, retries = 1): Promise<any> {
     try {
       const token = await this.getAccessToken();
       const instanceUrl = this.getInstanceUrl();
@@ -138,10 +169,10 @@ class SalesforceAuthService {
         logger.error(`❌ Salesforce API call failed: ${response.status} - ${errorText}`);
 
         // If unauthorized, clear token and retry once
-        if (response.status === 401) {
-          logger.info('🔄 Token expired, retrying authentication...');
+        if (response.status === 401 && retries > 0) {
+          logger.info('🔄 Token expired or unauthorized, retrying authentication...');
           this.clearToken();
-          return this.makeApiCall(endpoint, options);
+          return this.makeApiCall(endpoint, options, retries - 1);
         }
 
         throw new Error(`Salesforce API call failed: ${response.status} - ${errorText}`);
@@ -156,3 +187,32 @@ class SalesforceAuthService {
 }
 
 export default SalesforceAuthService;
+
+// Backwards-compatible static methods used across the codebase
+// These are thin wrappers or placeholders; real implementations may persist tokens to DB
+SalesforceAuthService.validateJWTToken = function (token: string): any {
+  try {
+    // lazy-require to avoid adding runtime dependency in environments that don't need it
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const jwt = require('jsonwebtoken');
+    const secret = process.env.JWT_SECRET || '';
+    return jwt.verify(token, secret);
+  } catch (err) {
+    throw err;
+  }
+};
+
+(SalesforceAuthService as any).getStoredTokens = async function (userId: string) {
+  // Placeholder: in a real app you'd fetch stored tokens from DB
+  return null;
+};
+
+(SalesforceAuthService as any).refreshAccessToken = async function (refreshToken: string) {
+  // Placeholder implementation; real implementation would call OAuth refresh
+  throw new Error('Refresh token flow not implemented');
+};
+
+(SalesforceAuthService as any).storeTokens = async function (user: any, tokens: any) {
+  // Placeholder: store tokens in DB or secure storage
+  return;
+};

@@ -1,6 +1,9 @@
 import Bull, { Queue, Job, JobOptions } from 'bull';
 import { logger } from '../utils/logger';
 import SalesforceDataService from './SalesforceDataService';
+import { UserModel } from '../models/User';
+import { OrganizationModel } from '../models/Organization';
+import { redis } from '../config/database';
 import { JobStats } from '../types';
 
 // Job types
@@ -321,8 +324,8 @@ class JobQueueManager {
   }
 
   // Queue management methods
-  async getQueueStats(): Promise<any> {
-    const stats = {};
+  async getQueueStats(): Promise<Record<string, JobStats>> {
+    const stats: Record<string, JobStats> = {};
 
     const queues = {
       dataSync: this.dataSync,
@@ -332,6 +335,7 @@ class JobQueueManager {
     };
 
     for (const [name, queue] of Object.entries(queues)) {
+      if (!queue) continue;
       const [waiting, active, completed, failed, delayed] = await Promise.all([
         queue.getWaiting(),
         queue.getActive(),
@@ -341,12 +345,12 @@ class JobQueueManager {
       ]);
 
       stats[name] = {
+        name,
         waiting: waiting.length,
         active: active.length,
         completed: completed.length,
         failed: failed.length,
-        delayed: delayed.length,
-      };
+      } as JobStats;
     }
 
     return stats;

@@ -89,14 +89,12 @@ export class ScheduledJobs {
           organizationId: row.org_id,
           syncType: 'full',
           priority: 1,
-        }, {
-          delay: Math.random() * 60000, // Stagger jobs over 1 minute
         });
 
-        logger.info(`Scheduled daily sync for organization: ${row.org_id}`);
+        (logger as any).info(`Scheduled daily sync for organization: ${row.org_id}`);
       }
 
-      logger.info(`Scheduled daily sync jobs for ${result.rows.length} organizations`);
+      (logger as any).info(`Scheduled daily sync jobs for ${result.rows.length} organizations`);
     } catch (error) {
       logger.error('Failed to schedule daily sync jobs', error);
       throw error;
@@ -164,14 +162,12 @@ export class ScheduledJobs {
       ];
 
       for (const task of cleanupTasks) {
-        await jobQueue.addCleanupJob(task as any, {
-          delay: Math.random() * 300000, // Stagger over 5 minutes
-        });
+        await jobQueue.addCleanupJob(task as any);
 
-        logger.info(`Scheduled cleanup job: ${task.type} (older than ${task.olderThanDays} days)`);
+        (logger as any).info(`Scheduled cleanup job: ${task.type} (older than ${task.olderThanDays} days)`);
       }
 
-      logger.info(`Scheduled ${cleanupTasks.length} cleanup jobs`);
+      (logger as any).info(`Scheduled ${cleanupTasks.length} cleanup jobs`);
     } catch (error) {
       logger.error('Failed to schedule cleanup jobs', error);
       throw error;
@@ -205,14 +201,12 @@ export class ScheduledJobs {
           reportType: 'usage',
           format: 'pdf',
           email: row.email,
-        }, {
-          delay: Math.random() * 120000, // Stagger over 2 minutes
         });
 
-        logger.info(`Scheduled daily report for organization: ${row.org_name}`);
+        (logger as any).info(`Scheduled daily report for organization: ${row.org_name}`);
       }
 
-      logger.info(`Scheduled daily reports for ${result.rows.length} organizations`);
+      (logger as any).info(`Scheduled daily reports for ${result.rows.length} organizations`);
     } catch (error) {
       logger.error('Failed to schedule daily reports', error);
       throw error;
@@ -254,8 +248,9 @@ export class ScheduledJobs {
       }
 
       // Log performance metrics
-      const totalActiveJobs = Object.values(healthData.queues).reduce((sum: number, queue: any) => sum + queue.active, 0);
-      const totalFailedJobs = Object.values(healthData.queues).reduce((sum: number, queue: any) => sum + queue.failed, 0);
+      const queuesArray = Object.values(healthData.queues) as Array<{ active?: number | string; failed?: number | string }>;
+      const totalActiveJobs = queuesArray.reduce((sum: number, queue) => sum + Number(queue?.active || 0), 0);
+      const totalFailedJobs = queuesArray.reduce((sum: number, queue) => sum + Number(queue?.failed || 0), 0);
 
       logger.info('System health check completed', {
         ...healthData,

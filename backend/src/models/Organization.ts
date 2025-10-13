@@ -103,10 +103,5 @@ export class OrganizationModel {
   }
 }
 
-// Placeholder - implement with database models
-export class Organization {
-  static async findById(id: string) {
-    // Placeholder implementation
-    return { id, name: 'Sample Organization' };
-  }
-}
+// Backwards compatible placeholder export (if other modules import `Organization` class)
+// Note: don't export a value named `Organization` to avoid colliding with the type import from ../types

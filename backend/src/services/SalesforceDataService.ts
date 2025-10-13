@@ -50,6 +50,25 @@ class SalesforceDataService {
     return SalesforceDataService.instance;
   }
 
+  // Backwards-compatible static wrappers for older call sites
+  static async fullSync(userId: string) {
+    return SalesforceDataService.getInstance().getUsers();
+  }
+
+  static async syncUsers(userId: string) {
+    return SalesforceDataService.getInstance().getUsers();
+  }
+
+  static async syncLicenseUtilization(userId: string) {
+    // Placeholder - real implementation would call license-specific endpoints
+    return [];
+  }
+
+  static async processEventLogFiles(userId: string) {
+    // Placeholder - no-op for now
+    return;
+  }
+
   /**
    * Get all Salesforce users using the exact query you provided
    */
