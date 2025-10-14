@@ -58,16 +58,25 @@ initializeServices();
 
 // Middleware
 app.use(helmet());
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  credentials: true
-}));
-app.use(compression());
-app.use(morgan('combined', {
-  stream: { write: (message) => logger.info(message.trim()) }
-}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// allow comma-separated origins via env var, fallback to local dev origin
+const allowedOrigins = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map(s => s.trim());
+
+app.use(
+  cors({
+    origin: allowedOrigins,   // accepts string or array
+    credentials: true,        // Allow cookies / auth credentials
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  })
+);
+
+// preflight for all routes
+app.options('*', cors({ origin: allowedOrigins, credentials: true }));
 
 // Security middleware
 app.use(securityMiddleware);
