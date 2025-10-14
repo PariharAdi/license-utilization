@@ -10,6 +10,7 @@ import SalesforceApiService from "../services/SalesforceApiService";
 interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
+  user?: any | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
   error: string | null;
@@ -23,6 +24,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +50,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
       await salesforceService.authenticate();
       setIsAuthenticated(true);
+      // Optionally fetch user info here if available from service
+      setUser(null);
 
       console.log("✅ Login successful");
     } catch (error) {
@@ -65,6 +69,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       setIsLoading(true);
       await salesforceService.logout();
       setIsAuthenticated(false);
+      setUser(null);
       setError(null);
       console.log("✅ Logout successful");
     } catch (error) {
@@ -85,6 +90,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       value={{
         isAuthenticated,
         isLoading,
+        user,
         login,
         logout,
         error,

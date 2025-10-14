@@ -8,6 +8,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 import NotificationCenter from "./NotificationCenter";
 
 interface HeaderProps {
@@ -22,6 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
   isLoading = false,
 }) => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-4">
@@ -91,7 +93,14 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             <button
-              onClick={logout}
+              onClick={async () => {
+                try {
+                  await logout();
+                } finally {
+                  // Redirect to login page so UI reflects logged-out state
+                  navigate("/login");
+                }
+              }}
               className="p-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
               title="Sign out"
             >
