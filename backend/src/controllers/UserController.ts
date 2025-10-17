@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import SalesforceDataService from '../services/SalesforceDataService';
+import ExportCsv from '../services/ExportCsv';
 import { logger } from '../utils/logger';
 import { ApiResponse } from '../types';
 
@@ -161,20 +162,10 @@ export class UserController {
   static async exportUsers(req: Request, res: Response): Promise<void> {
     try {
       logger.info('🔄 Exporting users to CSV...');
-
       const users = await salesforceService.getUsers();
 
-      // Generate CSV content
-      const csvHeader = 'ID,Name,Username,Email,Status,License,Profile,Role,Last Login,Login Count,Objects Accessed\n';
-      const csvContent = users.map(user =>
-        `${user.id},${user.name},${user.username},${user.email},${user.status},${user.license},${user.profile},${user.role},${user.lastLogin},${user.loginCount},${user.objectsAccessed}`
-      ).join('\n');
-
-      const csv = csvHeader + csvContent;
-
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=salesforce_users.csv');
-      res.send(csv);
+      // Use ExportCsv service to stream CSV to response
+      ExportCsv.sendToResponse(res, users, 'salesforce_users.csv');
 
       logger.info(`✅ Successfully exported ${users.length} users to CSV`);
     } catch (error) {

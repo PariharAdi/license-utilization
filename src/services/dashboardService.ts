@@ -4,12 +4,8 @@ import { API_ENDPOINTS } from '../config/api';
 import { User, OrgOverview, FilterOptions, AnalyticsData } from '../types';
 
 export class DashboardService {
-  private static isMockMode = false;
-
   static async checkBackendAvailability(): Promise<boolean> {
-    const isAvailable = await apiService.healthCheck();
-    this.isMockMode = !isAvailable;
-    return isAvailable;
+    return apiService.healthCheck();
   }
 
   static async getUsers(
@@ -24,10 +20,8 @@ export class DashboardService {
     },
     page: number = 1,
     limit: number = 50
-  ): Promise<{ data: User[]; pagination: any }> {
-    if (this.isMockMode) {
-      console.log('Using mock data for users');      
-    }
+  ): Promise<{ data: User[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
+    // Always attempt to use real backend data. Errors will be thrown to the caller.
 
     try {
       // Use SalesforceApiService to get users
@@ -88,9 +82,8 @@ export class DashboardService {
         },
       };
     } catch (error) {
-      console.error('Error fetching users, falling back to mock data:', error);
-      this.setMockMode(true);
-      return this.getUsers(filters, page, limit); // Fallback to mock
+      console.error('Error fetching users from backend:', error);
+      throw error;
     }
   }
 
@@ -124,10 +117,7 @@ export class DashboardService {
     return result;
   }
 
-  static async getOverview( dateRange: string = '90'): Promise<OrgOverview> {
-    if (this.isMockMode) {
-      console.log('Using mock data for overview');
-    }
+  static async getOverview(): Promise<OrgOverview> {
 
     try {
       // Get users from SalesforceApiService
@@ -203,8 +193,8 @@ export class DashboardService {
       return overview;
 
     } catch (error) {
-      console.error('Error fetching overview, falling back to mock data:', error);
-      return mockOrgOverview; // Fallback to mock
+      console.error('Error fetching overview from backend:', error);
+      throw error;
     }
   }
 
@@ -214,9 +204,6 @@ export class DashboardService {
     licenseTypes: string[];
     usageLevels: string[];
   }> {
-    if (this.isMockMode) {
-      console.log('Using mock data for filter options');
-    }
 
     try {
       // Get users from SalesforceApiService and extract unique values
@@ -234,9 +221,8 @@ export class DashboardService {
         usageLevels: ['Heavy', 'Medium', 'Light', 'Inactive'],
       };
     } catch (error) {
-      console.error('Error fetching filter options, falling back to mock data:', error);
-      this.setMockMode(true);
-      return this.getFilterOptions(); // Fallback to mock
+      console.error('Error fetching filter options from backend:', error);
+      throw error;
     }
   }
 
@@ -252,16 +238,29 @@ export class DashboardService {
     },
     format: string = 'csv'
   ): Promise<void> {
-    if (this.isMockMode) {
-      console.log('Using mock data for export');
-      // Use the existing frontend export functionality
-      const { exportToCSV } = await import('../utils/export');
-      const { data } = await this.getUsers(filters, 1, 1000);
-      exportToCSV(data);
-      return;
-    }
+    // Always try server-side export first; fallbacks use client-side CSV only on failure.
 
     try {
+      // Try server-side export first. The backend may return CSV text or a file blob.
+      const resp = await apiService.get<string>(API_ENDPOINTS.users.export, { ...filters, format });
+
+      // If backend responded with CSV text, trigger download in browser
+      if (resp && resp.success && resp.data && typeof resp.data === 'string') {
+        const csvText = resp.data as string;
+        const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+        const downloadName = `users-export-${new Date().toISOString().split('T')[0]}.${format}`;
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = downloadName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(downloadUrl);
+        return;
+      }
+
+      // If server-side didn't return CSV, try downloading a blob via the downloadFile helper
       await apiService.downloadFile(
         API_ENDPOINTS.users.export,
         `users-export-${new Date().toISOString().split('T')[0]}.${format}`,
@@ -269,7 +268,7 @@ export class DashboardService {
       );
     } catch (error) {
       console.error('Error exporting users:', error);
-      // Fallback to frontend export
+      // Fallback to frontend export (best-effort)
       const { exportToCSV } = await import('../utils/export');
       const { data } = await this.getUsers(filters, 1, 1000);
       exportToCSV(data);
@@ -277,10 +276,7 @@ export class DashboardService {
   }
 
   static async refreshData(): Promise<void> {
-    if (this.isMockMode) {
-      console.log('Mock mode - no data to refresh');
-      return;
-    }
+    // Always attempt to refresh from backend
 
     try {
       // In a real implementation, this would trigger a data sync
@@ -288,19 +284,16 @@ export class DashboardService {
       await apiService.get(API_ENDPOINTS.analytics.overview);
       console.log('Data refresh completed');
     } catch (error) {
-      console.error('Error refreshing data:', error);
-      throw new Error('Failed to refresh data from Salesforce');
+      console.error('Error refreshing data from backend:', error);
+      throw new Error('Failed to refresh data from backend');
     }
   }
 
-  static async getLicenseUtilization(_dateRange: string = '30'): Promise<{
+  static async getLicenseUtilization(): Promise<{
     full: { total: number; used: number };
     platform: { total: number; used: number };
     community: { total: number; used: number };
   }> {
-    if (this.isMockMode) {
-      console.log('Using mock data for license utilization');
-    }
 
     try {
       // Use SalesforceApiService to get real data
@@ -341,19 +334,16 @@ export class DashboardService {
         }
       };
     } catch (error) {
-      console.error('Error fetching license utilization, falling back to mock data:', error);
-      return mockOrgOverview.licenseUtilization;
+      console.error('Error fetching license utilization from backend:', error);
+      throw error;
     }
   }
 
-  static async getObjectUsage(_dateRange: string = '30', objectName?: string): Promise<Array<{
+  static async getObjectUsage(objectName?: string): Promise<Array<{
     name: string;
     usage: number;
   }>> {
-    if (this.isMockMode) {
-      console.log('Using mock data for object usage');
-      return mockOrgOverview.topObjects;
-    }
+    // Always generate object usage from backend users; throw on error
 
     try {
       // Get users from API and generate object usage data
@@ -391,8 +381,8 @@ export class DashboardService {
       // Sort by usage, highest first
       return objectStats.sort((a, b) => b.usage - a.usage);
     } catch (error) {
-      console.error('Error fetching object usage, falling back to mock data:', error);
-      return mockOrgOverview.topObjects;
+      console.error('Error fetching object usage from backend:', error);
+      throw error;
     }
   }
 
@@ -474,39 +464,9 @@ export class DashboardService {
         ],
       };
     } catch (error) {
-      console.error('Error fetching dashboard analytics:', error);
-      if (this.isMockMode) {
-        // Return mock data as fallback
-        return {
-          overview: {
-            totalLicenses: 100,
-            usedLicenses: 75,
-            unusedLicenses: 25,
-            utilizationRate: 75,
-          },
-          licenseTypes: [
-            { name: 'Salesforce', total: 50, used: 40, available: 10 },
-            { name: 'Salesforce Platform', total: 30, used: 25, available: 5 },
-            { name: 'Chatter Free', total: 20, used: 10, available: 10 },
-          ],
-          topObjects: [
-            { name: 'Account', accessCount: 1250, uniqueUsers: 45 },
-            { name: 'Contact', accessCount: 980, uniqueUsers: 42 },
-            { name: 'Opportunity', accessCount: 856, uniqueUsers: 38 },
-            { name: 'Lead', accessCount: 654, uniqueUsers: 35 },
-            { name: 'Case', accessCount: 523, uniqueUsers: 28 },
-          ],
-        };
-      }
+      console.error('Error fetching dashboard analytics from backend:', error);
       throw error;
     }
   }
 
-  static isMockModeEnabled(): boolean {
-    return this.isMockMode;
-  }
-
-  static setMockMode(enabled: boolean): void {
-    this.isMockMode = enabled;
-  }
 }
