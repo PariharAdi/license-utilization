@@ -1,20 +1,100 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Database, TrendingUp } from "lucide-react";
 import { OrgOverview } from "../types";
+import { DashboardService } from "../services/dashboardService";
 
 interface TopObjectsProps {
-  overview: OrgOverview;
+  overview?: OrgOverview;
 }
 
 export const TopObjects: React.FC<TopObjectsProps> = ({ overview }) => {
-  if (!overview || !overview.topObjects) {
-    console.warn("Org overview data or topObjects is missing.");
-    return null;
+  const [topObjects, setTopObjects] = useState<Array<{
+    name: string;
+    usage: number;
+  }> | null>(overview?.topObjects || null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Always attempt to fetch the canonical top-objects from the backend.
+    // If that fails, fall back to `overview.topObjects` when available.
+    let cancelled = false;
+    setLoading(true);
+    DashboardService.getObjectUsage()
+      .then((list) => {
+        if (cancelled) return;
+        setTopObjects(list || []);
+        setError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        const message = err?.message || String(err);
+        console.warn(
+          "Failed to fetch top-objects from backend, falling back to overview:",
+          message
+        );
+        setError(message);
+        if (overview && overview.topObjects) {
+          setTopObjects(overview.topObjects);
+          setError(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [overview]);
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-2 mb-6">
+          <Database className="w-5 h-5 text-blue-600" />
+          <h3 className="text-lg font-semibold text-gray-900">
+            Most Used Objects
+          </h3>
+        </div>
+        <p className="text-sm text-gray-600">Loading top objects…</p>
+      </div>
+    );
   }
-  const maxUsage = Math.max(
-    ...(overview.topObjects?.map((obj) => obj?.usage || 0) || [0])
-  );
+
+  if (error) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-2 mb-6">
+          <Database className="w-5 h-5 text-blue-600" />
+          <h3 className="text-lg font-semibold text-gray-900">
+            Most Used Objects
+          </h3>
+        </div>
+        <p className="text-sm text-red-600">
+          Failed to load top objects: {error}
+        </p>
+      </div>
+    );
+  }
+
+  const objects = topObjects || overview?.topObjects || [];
+  if (objects.length === 0) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-2 mb-6">
+          <Database className="w-5 h-5 text-blue-600" />
+          <h3 className="text-lg font-semibold text-gray-900">
+            Most Used Objects
+          </h3>
+        </div>
+        <p className="text-sm text-gray-600">No object usage data available.</p>
+      </div>
+    );
+  }
+
+  const maxUsage = Math.max(...(objects.map((obj) => obj?.usage || 0) || [0]));
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -27,8 +107,8 @@ export const TopObjects: React.FC<TopObjectsProps> = ({ overview }) => {
       </div>
 
       <div className="space-y-4">
-        {overview.topObjects.map((object, index) => {
-          const percentage = Math.round((object.usage / maxUsage) * 100);
+        {objects.map((object, index) => {
+          const percentage = Math.round((object.usage / (maxUsage || 1)) * 100);
 
           return (
             <Link
@@ -68,7 +148,7 @@ export const TopObjects: React.FC<TopObjectsProps> = ({ overview }) => {
         <p className="text-sm text-gray-600">
           Total object interactions in the last 90 days:{" "}
           <span className="font-semibold text-gray-900">
-            {overview.topObjects
+            {objects
               .reduce((sum, obj) => sum + (obj?.usage || 0), 0)
               ?.toLocaleString() || "0"}
           </span>

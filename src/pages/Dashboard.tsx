@@ -178,7 +178,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onRefresh, isLoading }) =>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <UsageChart overview={overview} />
         <LicenseUtilization overview={overview} />
-        <TopObjects overview={overview} />
+        {/* Strip `topObjects` from overview when passing to TopObjects to avoid redundancy.
+          TopObjects will fetch canonical data from the backend itself. */}
+        <TopObjects overview={{ ...overview, topObjects: [] }} />
       </div>
 
       {/* Optimization CTA */}
@@ -201,7 +203,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onRefresh, isLoading }) =>
       <UserTable users={users} />
 
       {/* Loading overlay for data refresh */}
-      {(isDataLoading && overview) && (
+      {isDataLoading && overview && (
         <div className="fixed inset-0 bg-black bg-opacity-25 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 shadow-lg">
             <div className="flex items-center space-x-3">

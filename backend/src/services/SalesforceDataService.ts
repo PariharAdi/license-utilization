@@ -223,6 +223,33 @@ class SalesforceDataService {
       throw error;
     }
   }
+
+  /**
+   * Get record counts for standard objects (Alternative to EventLogFile)
+   */
+  async getStandardObjectCounts(): Promise<Map<string, number>> {
+    const objects = ['Account', 'Contact', 'Opportunity', 'Lead', 'Case', 'Task', 'Campaign', 'Product2'];
+    const counts = new Map<string, number>();
+
+    logger.info('🔄 Fetching record counts for standard objects...');
+
+    // Run queries in parallel
+    await Promise.all(objects.map(async (objName) => {
+      try {
+        // SOQL Count query is very fast
+        const query = `SELECT COUNT() FROM ${objName}`;
+        const endpoint = `/services/data/v61.0/query?q=${encodeURIComponent(query)}`;
+
+        const response = await this.authService.makeApiCall(endpoint);
+        counts.set(objName, response.totalSize || 0);
+      } catch (err) {
+        logger.warn(`⚠️ Could not count ${objName}`, err);
+        counts.set(objName, 0);
+      }
+    }));
+
+    return counts;
+  }
 }
 
 export default SalesforceDataService;

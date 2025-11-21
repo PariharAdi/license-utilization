@@ -118,80 +118,13 @@ export class DashboardService {
   }
 
   static async getOverview(): Promise<OrgOverview> {
-
     try {
-      // Get users from SalesforceApiService
-      const sfApiService = SalesforceApiService.getInstance();
-      const users = await sfApiService.getUsers();
-
-      const totalUsers = users.length;
-      const activeUsers = users.filter(u => u.status === 'active').length;
-
-      // Calculate usage levels
-      const heavyUsers = users.filter(u => u.loginCount > 50).length;
-      const mediumUsers = users.filter(u => u.loginCount > 20 && u.loginCount <= 50).length;
-      const lightUsers = users.filter(u => u.loginCount > 5 && u.loginCount <= 20).length;
-      const inactiveUsers = users.filter(u => u.loginCount <= 5).length;
-
-      // Calculate license distribution
-      const fullLicenseCount = users.filter(u => u.license === 'Salesforce').length;
-      const platformLicenseCount = users.filter(u => u.license === 'Salesforce Platform').length;
-      const communityLicenseCount = users.filter(u =>
-        u.license === 'Chatter Free' || u.license === 'Community'
-      ).length;
-
-      const fullLicenseActive = users.filter(u =>
-        u.license === 'Salesforce' && u.status === 'active'
-      ).length;
-
-      const platformLicenseActive = users.filter(u =>
-        u.license === 'Salesforce Platform' && u.status === 'active'
-      ).length;
-
-      const communityLicenseActive = users.filter(u =>
-        (u.license === 'Chatter Free' || u.license === 'Community') && u.status === 'active'
-      ).length;
-
-      // Generate top objects based on objectsAccessed
-      const objectNames = [
-        "Account", "Contact", "Lead", "Opportunity", "Case",
-        "Task", "Event", "Campaign", "Product"
-      ];
-
-      const topObjects = objectNames
-        .map(name => ({
-          name,
-          usage: Math.floor(Math.random() * 1000) + 100
-        }))
-        .sort((a, b) => b.usage - a.usage)
-        .slice(0, 5);
-
-      const overview: OrgOverview = {
-        totalUsers,
-        activeUsers,
-        heavyUsers,
-        mediumUsers,
-        lightUsers,
-        inactiveUsers,
-        topObjects,
-        licenseUtilization: {
-          full: {
-            total: fullLicenseCount,
-            used: fullLicenseActive
-          },
-          platform: {
-            total: platformLicenseCount,
-            used: platformLicenseActive
-          },
-          community: {
-            total: communityLicenseCount,
-            used: communityLicenseActive
-          }
-        }
-      };
-
-      return overview;
-
+      // Prefer backend analytics endpoint which computes overview using Salesforce data
+      const resp = await apiService.get<{ success: boolean; data: OrgOverview }>(API_ENDPOINTS.analytics.overview);
+      if (!resp || resp.success === false) {
+        throw new Error('Failed to fetch overview from backend');
+      }
+      return resp.data;
     } catch (error) {
       console.error('Error fetching overview from backend:', error);
       throw error;
@@ -294,45 +227,17 @@ export class DashboardService {
     platform: { total: number; used: number };
     community: { total: number; used: number };
   }> {
-
     try {
-      // Use SalesforceApiService to get real data
-      const sfApiService = SalesforceApiService.getInstance();
-      const users = await sfApiService.getUsers();
-
-      // Calculate license types
-      const fullLicenseCount = users.filter(u => u.license === 'Salesforce').length;
-      const platformLicenseCount = users.filter(u => u.license === 'Salesforce Platform').length;
-      const communityLicenseCount = users.filter(u =>
-        u.license === 'Chatter Free' || u.license === 'Community'
-      ).length;
-
-      const fullLicenseActive = users.filter(u =>
-        u.license === 'Salesforce' && u.status === 'active'
-      ).length;
-
-      const platformLicenseActive = users.filter(u =>
-        u.license === 'Salesforce Platform' && u.status === 'active'
-      ).length;
-
-      const communityLicenseActive = users.filter(u =>
-        (u.license === 'Chatter Free' || u.license === 'Community') && u.status === 'active'
-      ).length;
-
-      return {
-        full: {
-          total: fullLicenseCount,
-          used: fullLicenseActive
-        },
-        platform: {
-          total: platformLicenseCount,
-          used: platformLicenseActive
-        },
-        community: {
-          total: communityLicenseCount,
-          used: communityLicenseActive
-        }
-      };
+      const resp = await apiService.get<{ success: boolean; data: { full: { total: number; used: number }; platform: { total: number; used: number }; community: { total: number; used: number } } }>(
+        API_ENDPOINTS.analytics.licenseUtilization
+      );
+      if (!resp || resp.success === false) {
+        const details = resp
+          ? `Response: ${JSON.stringify(resp)}`
+          : 'No response received';
+        throw new Error(`Failed to fetch license utilization. ${details}`);
+      }
+      return resp.data;
     } catch (error) {
       console.error('Error fetching license utilization from backend:', error);
       throw error;
@@ -344,42 +249,19 @@ export class DashboardService {
     usage: number;
   }>> {
     // Always generate object usage from backend users; throw on error
-
     try {
-      // Get users from API and generate object usage data
-      const sfApiService = SalesforceApiService.getInstance();
-      const users = await sfApiService.getUsers();
-
-      // Create a list of possible objects
-      const objectNames = [
-        "Account", "Contact", "Lead", "Opportunity", "Case",
-        "Task", "Event", "Campaign", "Product", "PriceBook",
-        "Contract", "Solution"
-      ];
-
-      // If a specific object was requested, filter just for that one
-      const targetObjects = objectName
-        ? objectNames.filter(name => name.toLowerCase() === objectName.toLowerCase())
-        : objectNames;
-
-      // Generate usage stats based on user login counts and objects accessed
-      const objectStats = targetObjects.map(name => {
-        // Calculate a usage value based on the total user login count and objects accessed
-        const totalLoginCount = users.reduce((sum, user) => sum + user.loginCount, 0);
-        const avgObjectsAccessed = users.reduce((sum, user) => sum + (user.objectsAccessed || 0), 0) / users.length;
-
-        // Generate a random but somewhat consistent usage number
-        const randomFactor = name.charCodeAt(0) / 100; // Use the name to create a consistent random factor
-        const usage = Math.floor((totalLoginCount * avgObjectsAccessed * randomFactor) % 1000) + 100;
-
-        return {
-          name,
-          usage
-        };
-      });
-
-      // Sort by usage, highest first
-      return objectStats.sort((a, b) => b.usage - a.usage);
+      // Call backend objects endpoint which returns usage by object
+      const endpoint = API_ENDPOINTS.analytics.topObjects;
+      const resp = await apiService.get<{ success: boolean; data: Array<{ name: string; usage: number }> }>(endpoint);
+      if (!resp || (typeof resp === 'object' && 'success' in resp && resp.success === false)) throw new Error('Failed to fetch object usage');
+      // Safely extract data and ensure list is typed as an array
+      const listData = (resp && typeof resp === 'object' && 'data' in resp && Array.isArray(resp.data)) ? (resp.data) : [];
+      let list: Array<{ name: string; usage: number }> = listData;
+      if (objectName) {
+        list = list.filter(o => o.name.toLowerCase() === objectName.toLowerCase());
+      }
+      console.log('Fetched object usage:', list);
+      return list;
     } catch (error) {
       console.error('Error fetching object usage from backend:', error);
       throw error;
