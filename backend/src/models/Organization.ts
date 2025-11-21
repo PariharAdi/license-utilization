@@ -102,3 +102,6 @@ export class OrganizationModel {
     return result.rowCount > 0;
   }
 }
+
+// Backwards compatible placeholder export (if other modules import `Organization` class)
+// Note: don't export a value named `Organization` to avoid colliding with the type import from ../types

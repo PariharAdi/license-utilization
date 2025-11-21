@@ -1,17 +1,21 @@
 import { Router } from 'express';
 import { UserController } from '../controllers/UserController';
-import { authenticate, validateOrgAccess } from '../middleware/auth';
 
 const router = Router();
 
-// All routes require authentication
-router.use(authenticate);
-
-// User routes
+// GET /api/users - Get all users with optional filtering
 router.get('/', UserController.getUsers);
+
+// GET /api/users/summary - Get user summary
 router.get('/summary', UserController.getUserSummary);
+
+// GET /api/users/filters - Get filter options
 router.get('/filters', UserController.getFilterOptions);
+
+// GET /api/users/export - Export users to CSV
 router.get('/export', UserController.exportUsers);
-router.get('/:userId', validateOrgAccess, UserController.getUser);
+
+// GET /api/users/:userId - Get user by ID
+router.get('/:userId', UserController.getUserById);
 
 export default router;

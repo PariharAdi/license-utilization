@@ -1,7 +1,6 @@
 import React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, User, Calendar, BarChart3, TrendingUp, TrendingDown, Minus, Activity } from 'lucide-react';
-import { generateDetailedUserMetrics } from '../data/mockDetailData';
 
 export const UserDetailPage: React.FC = () => {
   const { userId } = useParams<{ userId: string }>();

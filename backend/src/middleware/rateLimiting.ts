@@ -1,65 +1,27 @@
 import rateLimit from 'express-rate-limit';
-import { redis } from '../config/database';
-
-// Create Redis store for rate limiting
-class RedisStore {
-  private prefix: string;
-
-  constructor(prefix = 'rl:') {
-    this.prefix = prefix;
-  }
-
-  async incr(key: string): Promise<number> {
-    const fullKey = `${this.prefix}${key}`;
-    return await redis.incr(fullKey);
-  }
-
-  async expire(key: string, seconds: number): Promise<void> {
-    const fullKey = `${this.prefix}${key}`;
-    await redis.expire(fullKey, seconds);
-  }
-
-  async get(key: string): Promise<number | null> {
-    const fullKey = `${this.prefix}${key}`;
-    const value = await redis.get(fullKey);
-    return value ? parseInt(value) : null;
-  }
-
-  async reset(key: string): Promise<void> {
-    const fullKey = `${this.prefix}${key}`;
-    await redis.del(fullKey);
-  }
-}
-
-const redisStore = new RedisStore();
+import { logger } from '../utils/logger';
 
 // General API rate limiter
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // 100 requests per window
+  max: 100, // limit each IP to 100 requests per windowMs
   message: {
     success: false,
-    error: 'Too many requests. Please try again later.',
+    error: 'Too many requests from this IP, please try again later.',
   },
   standardHeaders: true,
   legacyHeaders: false,
-  store: {
-    incr: async (key) => {
-      const count = await redisStore.incr(key);
-      if (count === 1) {
-        await redisStore.expire(key, 15 * 60); // 15 minutes
-      }
-      return { totalHits: count };
-    },
-    decrement: async (key) => {
-      const count = await redisStore.get(key);
-      return { totalHits: Math.max(0, (count || 0) - 1) };
-    },
-    resetKey: async (key) => {
-      await redisStore.reset(key);
-    },
+  handler: (req, res) => {
+    logger.warn(`Rate limit exceeded for IP: ${req.ip}`);
+    res.status(429).json({
+      success: false,
+      error: 'Too many requests from this IP, please try again later.',
+    });
   },
 });
+
+// Keep rateLimiter for backward compatibility
+export const rateLimiter = apiLimiter;
 
 // Authentication rate limiter (stricter)
 export const authLimiter = rateLimit({
@@ -105,7 +67,8 @@ export const createUserLimiter = (maxRequests: number, windowMs: number) => {
     keyGenerator: (req) => {
       // Use user ID if authenticated, otherwise fall back to IP
       const user = (req as any).user;
-      return user ? `user:${user.id}` : req.ip;
+      // Ensure we always return a string
+      return user && user.id ? `user:${user.id}` : req.ip || 'unknown';
     },
     message: {
       success: false,

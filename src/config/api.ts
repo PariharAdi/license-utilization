@@ -24,8 +24,9 @@ export const API_ENDPOINTS = {
   // Analytics
   analytics: {
     overview: '/api/analytics/overview',
-    licenses: '/api/analytics/licenses',
-    objects: '/api/analytics/objects',
+    topObjects: '/api/analytics/top-objects',
+    licenseUtilization: '/api/analytics/license-utilization',
+    licenses: '/api/analytics/license-utilization',
     userActivity: (userId: string) => `/api/analytics/users/${userId}/activity`,
   },
 } as const;

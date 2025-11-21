@@ -1,7 +1,7 @@
 import React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Database, Users, TrendingUp, Calendar, User } from 'lucide-react';
-import { mockObjectDetails } from '../data/mockDetailData';
+
 
 export const ObjectDetailPage: React.FC = () => {
   const { objectName } = useParams<{ objectName: string }>();

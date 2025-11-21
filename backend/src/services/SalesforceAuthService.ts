@@ -1,336 +1,218 @@
-import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
-import { createSalesforceConnection, createAuthenticatedConnection } from '../config/salesforce';
-import { OrganizationModel } from '../models/Organization';
-import { UserModel } from '../models/User';
-import { redis } from '../config/database';
-import { SalesforceUser, SalesforceTokens, Organization, User } from '../types';
+import fetch, { RequestInit } from 'node-fetch';
+import { SALESFORCE_CONFIG } from '../config/salesforce';
+import { logger } from '../utils/logger';
+import { SalesforceTokenResponse } from '../types';
 
-export class SalesforceAuthService {
-  private static readonly STATE_EXPIRY = 3600; // 1 hour in seconds
-  private static readonly TOKEN_EXPIRY = 7 * 24 * 60 * 60; // 7 days in seconds
+class SalesforceAuthService {
+  private static instance: SalesforceAuthService;
+  private accessToken: string | null = null;
+  private instanceUrl: string | null = null;
+  private tokenExpiry: Date | null = null;
 
-  /**
-   * Generate OAuth state parameter and store in Redis
-   */
-  static async generateOAuthState(): Promise<string> {
-    const state = crypto.randomBytes(32).toString('hex');
-    await redis.setex(`oauth_state:${state}`, this.STATE_EXPIRY, JSON.stringify({
-      created: Date.now(),
-      used: false,
-    }));
-    return state;
-  }
+  private constructor() { }
 
-  /**
-   * Validate OAuth state parameter
-   */
-  static async validateOAuthState(state: string): Promise<boolean> {
-    try {
-      const stateData = await redis.get(`oauth_state:${state}`);
-      if (!stateData) return false;
-
-      const parsedData = JSON.parse(stateData);
-      if (parsedData.used) return false;
-
-      // Mark state as used
-      await redis.setex(`oauth_state:${state}`, this.STATE_EXPIRY, JSON.stringify({
-        ...parsedData,
-        used: true,
-      }));
-
-      return true;
-    } catch (error) {
-      console.error('Error validating OAuth state:', error);
-      return false;
+  public static getInstance(): SalesforceAuthService {
+    if (!SalesforceAuthService.instance) {
+      SalesforceAuthService.instance = new SalesforceAuthService();
     }
+    return SalesforceAuthService.instance;
   }
 
-  /**
-   * Get Salesforce authorization URL
-   */
-  static getAuthorizationUrl(): Promise<{ url: string; state: string }> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        const conn = createSalesforceConnection();
-        const state = await this.generateOAuthState();
-
-        const authUrl = conn.oauth2.getAuthorizationUrl({
-          scope: 'api id web refresh_token',
-          state: state,
-        });
-
-        resolve({ url: authUrl, state });
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-
-  /**
-   * Exchange authorization code for tokens
-   */
-  static async exchangeCodeForTokens(code: string, state: string): Promise<SalesforceTokens> {
-    // Validate state
-    const isValidState = await this.validateOAuthState(state);
-    if (!isValidState) {
-      throw new Error('Invalid or expired state parameter');
-    }
-
-    const conn = createSalesforceConnection();
-
-    return new Promise((resolve, reject) => {
-      conn.oauth2.requestToken(code, (error, tokenResponse) => {
-        if (error) {
-          reject(new Error(`Token exchange failed: ${error.message}`));
-          return;
-        }
-
-        if (!tokenResponse) {
-          reject(new Error('No token response received'));
-          return;
-        }
-
-        const tokens: SalesforceTokens = {
-          accessToken: tokenResponse.access_token,
-          refreshToken: tokenResponse.refresh_token,
-          instanceUrl: tokenResponse.instance_url,
-          userId: this.extractIdFromUrl(tokenResponse.id),
-          organizationId: this.extractOrgIdFromUrl(tokenResponse.id),
-          expiresAt: new Date(Date.now() + (tokenResponse.expires_in || 3600) * 1000),
-        };
-
-        resolve(tokens);
-      });
-    });
-  }
-
-  /**
-   * Get user information from Salesforce
-   */
-  static async getSalesforceUserInfo(tokens: SalesforceTokens): Promise<SalesforceUser> {
-    const conn = createAuthenticatedConnection(tokens.accessToken, tokens.instanceUrl);
-
-    return new Promise((resolve, reject) => {
-      conn.identity((error, identityResponse) => {
-        if (error) {
-          reject(new Error(`Failed to get user info: ${error.message}`));
-          return;
-        }
-
-        if (!identityResponse) {
-          reject(new Error('No identity response received'));
-          return;
-        }
-
-        const userInfo: SalesforceUser = {
-          id: identityResponse.user_id,
-          username: identityResponse.username,
-          email: identityResponse.email,
-          firstName: identityResponse.first_name,
-          lastName: identityResponse.last_name,
-          displayName: identityResponse.display_name,
-          organizationId: identityResponse.organization_id,
-          organizationName: identityResponse.organization?.name || 'Unknown Org',
-          profileId: '', // Would need additional query
-          profileName: '', // Would need additional query
-          userType: identityResponse.user_type,
-          isActive: identityResponse.active,
-          lastLoginDate: identityResponse.last_modified_date,
-          photoUrl: identityResponse.photos?.picture,
-        };
-
-        resolve(userInfo);
-      });
-    });
-  }
-
-  /**
-   * Store tokens securely in database/Redis
-   */
-  static async storeTokens(user: User, tokens: SalesforceTokens): Promise<void> {
-    const tokenKey = `sf_tokens:${user.id}`;
-
-    // Hash tokens for security
-    const hashedTokens = {
-      accessToken: this.hashToken(tokens.accessToken),
-      refreshToken: tokens.refreshToken ? this.hashToken(tokens.refreshToken) : undefined,
-      instanceUrl: tokens.instanceUrl,
-      userId: tokens.userId,
-      organizationId: tokens.organizationId,
-      expiresAt: tokens.expiresAt?.toISOString(),
-    };
-
-    await redis.setex(tokenKey, this.TOKEN_EXPIRY, JSON.stringify(hashedTokens));
-  }
-
-  /**
-   * Authenticate user with Salesforce and create/update local user record
-   */
-  static async authenticateUser(code: string, state: string): Promise<{ user: User; organization: Organization; tokens: SalesforceTokens }> {
-    try {
-      // Exchange code for tokens
-      const tokens = await this.exchangeCodeForTokens(code, state);
-
-      // Get user info from Salesforce
-      const salesforceUser = await this.getSalesforceUserInfo(tokens);
-
-      // Find or create organization
-      let organization = await OrganizationModel.findBySalesforceId(salesforceUser.organizationId);
-      if (!organization) {
-        organization = await OrganizationModel.create({
-          salesforceOrgId: salesforceUser.organizationId,
-          orgName: salesforceUser.organizationName,
-          instanceUrl: tokens.instanceUrl,
-        });
-      }
-
-      // Find or create user
-      let user = await UserModel.findBySalesforceId(organization.id, salesforceUser.id);
-      if (!user) {
-        user = await UserModel.create({
-          orgId: organization.id,
-          salesforceUserId: salesforceUser.id,
-          username: salesforceUser.username,
-          email: salesforceUser.email,
-          firstName: salesforceUser.firstName,
-          lastName: salesforceUser.lastName,
-          profileId: salesforceUser.profileId,
-          profileName: salesforceUser.profileName,
-          userRoleId: undefined, // Would need additional query
-          userRoleName: undefined, // Would need additional query
-          licenseType: undefined, // Would need additional query
-          isActive: salesforceUser.isActive,
-          lastLogin: salesforceUser.lastLoginDate ? new Date(salesforceUser.lastLoginDate) : undefined,
-        });
-      } else {
-        // Update existing user
-        await UserModel.update(user.id, {
-          username: salesforceUser.username,
-          email: salesforceUser.email,
-          firstName: salesforceUser.firstName,
-          lastName: salesforceUser.lastName,
-          isActive: salesforceUser.isActive,
-          lastLogin: new Date(),
-        });
-      }
-
-      // Store tokens
-      await this.storeTokens(user, tokens);
-
-      return { user, organization, tokens };
-    } catch (error) {
-      console.error('Authentication error:', error);
-      throw new Error(`Authentication failed: ${error.message}`);
-    }
-  }
-
-  /**
-   * Generate JWT token for frontend authentication
-   */
-  static generateJWTToken(user: User, organization: Organization): string {
-    const payload = {
-      userId: user.id,
-      salesforceUserId: user.salesforceUserId,
-      organizationId: organization.id,
-      salesforceOrgId: organization.salesforceOrgId,
-      email: user.email,
-      username: user.username,
-    };
-
-    return jwt.sign(payload, process.env.JWT_SECRET!, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-    });
-  }
-
-  /**
-   * Validate JWT token
-   */
+  // Static helpers used by other modules (placeholders)
   static validateJWTToken(token: string): any {
-    try {
-      return jwt.verify(token, process.env.JWT_SECRET!);
-    } catch (error) {
-      throw new Error('Invalid token');
-    }
+    // lightweight wrapper - real implementation may verify JWT signature
+    // Defer to jsonwebtoken at runtime if available
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const jwt = require('jsonwebtoken');
+    const secret = process.env.JWT_SECRET || '';
+    return jwt.verify(token, secret);
+  }
+
+  static async getStoredTokens(userId: string): Promise<null | { accessToken: string; refreshToken?: string; expiresAt?: Date }> {
+    return null;
+  }
+
+  static async refreshAccessToken(refreshToken: string): Promise<any> {
+    throw new Error('Refresh token flow not implemented');
+  }
+
+  static async storeTokens(user: any, tokens: any): Promise<void> {
+    // no-op placeholder
+    return;
   }
 
   /**
-   * Get stored tokens for a user
+   * Authenticate with Salesforce using OAuth 2.0 Password Grant
    */
-  static async getStoredTokens(userId: string): Promise<SalesforceTokens | null> {
+  async authenticate(): Promise<SalesforceTokenResponse> {
     try {
-      const tokenKey = `sf_tokens:${userId}`;
-      const tokenData = await redis.get(tokenKey);
+      logger.info('🔄 Authenticating with Salesforce...');
 
-      if (!tokenData) return null;
-
-      const parsedTokens = JSON.parse(tokenData);
-      return {
-        accessToken: parsedTokens.accessToken,
-        refreshToken: parsedTokens.refreshToken,
-        instanceUrl: parsedTokens.instanceUrl,
-        userId: parsedTokens.userId,
-        organizationId: parsedTokens.organizationId,
-        expiresAt: parsedTokens.expiresAt ? new Date(parsedTokens.expiresAt) : undefined,
-      };
-    } catch (error) {
-      console.error('Error retrieving stored tokens:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Refresh access token using refresh token
-   */
-  static async refreshAccessToken(refreshToken: string): Promise<SalesforceTokens> {
-    const conn = createSalesforceConnection();
-
-    return new Promise((resolve, reject) => {
-      conn.oauth2.refreshToken(refreshToken, (error, tokenResponse) => {
-        if (error) {
-          reject(new Error(`Token refresh failed: ${error.message}`));
-          return;
-        }
-
-        if (!tokenResponse) {
-          reject(new Error('No token response received'));
-          return;
-        }
-
-        const tokens: SalesforceTokens = {
-          accessToken: tokenResponse.access_token,
-          instanceUrl: tokenResponse.instance_url,
-          userId: this.extractIdFromUrl(tokenResponse.id),
-          organizationId: this.extractOrgIdFromUrl(tokenResponse.id),
-          expiresAt: new Date(Date.now() + (tokenResponse.expires_in || 3600) * 1000),
-        };
-
-        resolve(tokens);
+      const tokenUrl = SALESFORCE_CONFIG.tokenUrl;
+      const body = new URLSearchParams({
+        grant_type: 'password',
+        client_id: SALESFORCE_CONFIG.clientId,
+        client_secret: SALESFORCE_CONFIG.clientSecret,
+        username: SALESFORCE_CONFIG.username,
+        password: SALESFORCE_CONFIG.password,
       });
-    });
+
+      const response = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: body.toString(),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.error(`❌ Salesforce authentication failed: ${response.status} - ${errorText}`);
+        throw new Error(`Salesforce authentication failed: ${response.status} - ${errorText}`);
+      }
+
+      const tokenData: SalesforceTokenResponse = await response.json() as SalesforceTokenResponse;
+
+      // Store token and instance URL
+      this.accessToken = tokenData.access_token;
+      this.instanceUrl = tokenData.instance_url;
+
+      // Set token expiry. Prefer explicit expires_in from Salesforce when available.
+      // Some Salesforce responses include `expires_in` (seconds).
+      const expiresInSec = (tokenData as any).expires_in ? Number((tokenData as any).expires_in) : 2 * 60 * 60;
+      this.tokenExpiry = new Date(Date.now() + expiresInSec * 1000);
+
+      logger.info('✅ Salesforce authentication successful');
+      logger.info(`📍 Instance URL: ${this.instanceUrl}`);
+
+      return tokenData;
+    } catch (error) {
+      logger.error('❌ Salesforce authentication error:', error);
+      this.clearToken();
+      throw error;
+    }
   }
 
   /**
-   * Logout user and clear tokens
+   * Get valid access token (authenticate if needed)
    */
-  static async logout(userId: string): Promise<void> {
-    const tokenKey = `sf_tokens:${userId}`;
-    await redis.del(tokenKey);
+  async getAccessToken(): Promise<string> {
+    if (!this.isTokenValid()) {
+      await this.authenticate();
+    }
+
+    if (!this.accessToken) {
+      throw new Error('Failed to obtain valid access token');
+    }
+
+    return this.accessToken;
   }
 
-  // Helper methods
-  private static hashToken(token: string): string {
-    return crypto.createHash('sha256').update(token).digest('hex');
+  /**
+   * Get instance URL
+   */
+  getInstanceUrl(): string {
+    if (!this.instanceUrl) {
+      throw new Error('Instance URL not available. Please authenticate first.');
+    }
+    return this.instanceUrl;
   }
 
-  private static extractIdFromUrl(idUrl: string): string {
-    const parts = idUrl.split('/');
-    return parts[parts.length - 1];
+  /**
+   * Check if current token is valid
+   */
+  isTokenValid(): boolean {
+    return !!(
+      this.accessToken &&
+      this.instanceUrl &&
+      this.tokenExpiry &&
+      this.tokenExpiry > new Date()
+    );
   }
 
-  private static extractOrgIdFromUrl(idUrl: string): string {
-    const parts = idUrl.split('/');
-    const orgIndex = parts.indexOf('00D') !== -1 ? parts.indexOf('00D') : parts.length - 2;
-    return parts[orgIndex];
+  /**
+   * Clear stored token
+   */
+  clearToken(): void {
+    this.accessToken = null;
+    this.instanceUrl = null;
+    this.tokenExpiry = null;
+    logger.info('🧹 Salesforce token cleared');
+  }
+
+  /**
+   * Make authenticated API call to Salesforce
+   */
+  /**
+   * Make authenticated API call to Salesforce. Retries once on 401 by default.
+   * @param endpoint API path (appended to instance URL)
+   * @param options fetch options (RequestInit)
+   * @param retries number of retries on 401 (default 1)
+   */
+  async makeApiCall(endpoint: string, options: RequestInit = {}, retries = 1): Promise<any> {
+    try {
+      const token = await this.getAccessToken();
+      const instanceUrl = this.getInstanceUrl();
+      const url = `${instanceUrl}${endpoint}`;
+
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.error(`❌ Salesforce API call failed: ${response.status} - ${errorText}`);
+
+        // If unauthorized, clear token and retry once
+        if (response.status === 401 && retries > 0) {
+          logger.info('🔄 Token expired or unauthorized, retrying authentication...');
+          this.clearToken();
+          return this.makeApiCall(endpoint, options, retries - 1);
+        }
+
+        throw new Error(`Salesforce API call failed: ${response.status} - ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      logger.error('❌ Salesforce API call error:', error);
+      throw error;
+    }
   }
 }
+
+export default SalesforceAuthService;
+
+// Backwards-compatible static methods used across the codebase
+// These are thin wrappers or placeholders; real implementations may persist tokens to DB
+SalesforceAuthService.validateJWTToken = function (token: string): any {
+  try {
+    // lazy-require to avoid adding runtime dependency in environments that don't need it
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const jwt = require('jsonwebtoken');
+    const secret = process.env.JWT_SECRET || '';
+    return jwt.verify(token, secret);
+  } catch (err) {
+    throw err;
+  }
+};
+
+(SalesforceAuthService as any).getStoredTokens = async function (userId: string) {
+  // Placeholder: in a real app you'd fetch stored tokens from DB
+  return null;
+};
+
+(SalesforceAuthService as any).refreshAccessToken = async function (refreshToken: string) {
+  // Placeholder implementation; real implementation would call OAuth refresh
+  throw new Error('Refresh token flow not implemented');
+};
+
+(SalesforceAuthService as any).storeTokens = async function (user: any, tokens: any) {
+  // Placeholder: store tokens in DB or secure storage
+  return;
+};

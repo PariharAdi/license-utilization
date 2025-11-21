@@ -1,19 +1,88 @@
 export interface User {
   id: string;
   name: string;
+  username: string;
   email: string;
+  status: string;
+  license: string;
   profile: string;
   role: string;
   lastLogin: string;
-  licenseType: 'Full' | 'Platform' | 'Community';
-  usageLevel: 'Heavy' | 'Medium' | 'Light' | 'Inactive';
-  objectTouches: {
-    [objectName: string]: number;
+  loginCount: number;
+  objectsAccessed: number;
+  favoriteObject?: string;
+  licenseType?: string;
+  usageLevel?: string;
+  reportsRun?: number;
+  tabHits?: number;
+  dashboardViews?: number;
+  pageViews?: number;
+  objectTouches?: Record<string, number>;
+}
+
+export interface SalesforceUser {
+  Id: string;
+  Name: string;
+  Username: string;
+  Email: string;
+  IsActive: boolean;
+  ProfileId: string;
+  Profile: {
+    Name: string;
   };
-  reportsRun: number;
-  dashboardViews: number;
-  tabHits: number;
-  pageViews: number;
+  UserRole: {
+    Name: string;
+  } | null;
+}
+
+export interface UserActivity {
+  date: string;
+  logins: number;
+  objectsAccessed: number;
+}
+
+export interface ObjectAccess {
+  objectName: string;
+  accessCount: number;
+  lastAccessed: string;
+}
+
+export interface FilterOptions {
+  profile?: string[];
+  licenseType?: string[];
+  usageLevel?: string[];
+  licenses: string[];
+  profiles: string[];
+  roles: string[];
+  statuses: string[];
+}
+
+export interface UserSummary {
+  totalUsers: number;
+  activeUsers: number;
+  inactiveUsers: number;
+  utilizationRate: number;
+  licenseDistribution: Record<string, number>;
+}
+
+export interface AnalyticsData {
+  overview: {
+    totalLicenses: number;
+    usedLicenses: number;
+    unusedLicenses: number;
+    utilizationRate: number;
+  };
+  licenseTypes: Array<{
+    name: string;
+    total: number;
+    used: number;
+    available: number;
+  }>;
+  topObjects: Array<{
+    name: string;
+    accessCount: number;
+    uniqueUsers: number;
+  }>;
 }
 
 export interface OrgOverview {
@@ -32,76 +101,4 @@ export interface OrgOverview {
     platform: { total: number; used: number };
     community: { total: number; used: number };
   };
-}
-
-export interface FilterOptions {
-  profile: string[];
-  role: string[];
-  licenseType: string[];
-  usageLevel: string[];
-  dateRange: '90' | '180' | '365';
-}
-
-export interface UsageMetrics {
-  period: string;
-  objectUsage: { [key: string]: number };
-  reportRuns: number;
-  dashboardViews: number;
-  loginCount: number;
-}
-
-export interface UserActivity {
-  id: string;
-  userId: string;
-  objectName: string;
-  actionType: 'CREATE' | 'READ' | 'UPDATE' | 'DELETE' | 'VIEW';
-  timestamp: string;
-  recordId?: string;
-  sessionId: string;
-}
-
-export interface ObjectUsageDetail {
-  objectName: string;
-  totalInteractions: number;
-  uniqueUsers: number;
-  userBreakdown: Array<{
-    userId: string;
-    userName: string;
-    interactions: number;
-    lastAccess: string;
-    actionTypes: {
-      CREATE: number;
-      READ: number;
-      UPDATE: number;
-      DELETE: number;
-      VIEW: number;
-    };
-  }>;
-  timelineData: Array<{
-    date: string;
-    interactions: number;
-  }>;
-}
-
-export interface DetailedUserMetrics extends User {
-  activityTimeline: Array<{
-    date: string;
-    objectTouches: number;
-    reportsRun: number;
-    dashboardViews: number;
-    loginCount: number;
-  }>;
-  recentActivities: UserActivity[];
-  objectUsageBreakdown: Array<{
-    objectName: string;
-    totalTouches: number;
-    actionBreakdown: {
-      CREATE: number;
-      READ: number;
-      UPDATE: number;
-      DELETE: number;
-      VIEW: number;
-    };
-    trend: 'up' | 'down' | 'stable';
-  }>;
 }

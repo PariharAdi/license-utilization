@@ -1,34 +1,31 @@
-import jsforce from 'jsforce';
+import fetch from 'node-fetch';
 
-export const salesforceConfig = {
+export const SALESFORCE_CONFIG = {
   clientId: process.env.SALESFORCE_CLIENT_ID!,
   clientSecret: process.env.SALESFORCE_CLIENT_SECRET!,
-  redirectUri: process.env.SALESFORCE_REDIRECT_URI!,
-  loginUrl: process.env.SALESFORCE_LOGIN_URL || 'https://login.salesforce.com',
-  scope: 'api id web refresh_token',
+  username: process.env.SALESFORCE_USERNAME!,
+  password: process.env.SALESFORCE_PASSWORD!,
+  tokenUrl: process.env.SALESFORCE_TOKEN_URL || 'https://login.salesforce.com/services/oauth2/token',
+  apiVersion: process.env.SALESFORCE_API_VERSION || 'v61.0',
 };
 
-export const createSalesforceConnection = (options?: jsforce.ConnectionOptions): jsforce.Connection => {
-  return new jsforce.Connection({
-    oauth2: {
-      clientId: salesforceConfig.clientId,
-      clientSecret: salesforceConfig.clientSecret,
-      redirectUri: salesforceConfig.redirectUri,
-      loginUrl: salesforceConfig.loginUrl,
-    },
-    version: '60.0', // Winter '25 API version
-    ...options,
-  });
-};
+// Validate function to be called after dotenv.config()
+export const validateSalesforceConfig = (): void => {
+  if (!SALESFORCE_CONFIG.clientId) {
+    throw new Error('SALESFORCE_CLIENT_ID environment variable is required');
+  }
 
-export const createAuthenticatedConnection = (accessToken: string, instanceUrl: string): jsforce.Connection => {
-  const conn = createSalesforceConnection();
-  conn.initialize({
-    accessToken,
-    instanceUrl,
-    version: '60.0',
-  });
-  return conn;
+  if (!SALESFORCE_CONFIG.clientSecret) {
+    throw new Error('SALESFORCE_CLIENT_SECRET environment variable is required');
+  }
+
+  if (!SALESFORCE_CONFIG.username) {
+    throw new Error('SALESFORCE_USERNAME environment variable is required');
+  }
+
+  if (!SALESFORCE_CONFIG.password) {
+    throw new Error('SALESFORCE_PASSWORD environment variable is required');
+  }
 };
 
 // Required Salesforce permissions for the application
