@@ -102,3 +102,57 @@ export interface OrgOverview {
     community: { total: number; used: number };
   };
 }
+
+export interface ObjectUsageDetail {
+  objectName: string;
+  totalInteractions: number;
+  uniqueUsers: number;
+  userBreakdown: Array<{
+    userId: string;
+    userName: string;
+    interactions: number;
+    lastAccess: string;
+    actionTypes: {
+      CREATE: number;
+      READ: number;
+      UPDATE: number;
+      DELETE: number;
+      VIEW: number;
+    };
+  }>;
+  timelineData: Array<{
+    date: string;
+    interactions: number;
+  }>;
+}
+
+export interface DetailedUserMetrics extends User {
+  activityTimeline: Array<{
+    date: string;
+    objectTouches: number;
+    reportsRun: number;
+    dashboardViews: number;
+    loginCount: number;
+  }>;
+  recentActivities: Array<{
+    id: string;
+    userId: string;
+    objectName: string;
+    actionType: string;
+    timestamp: string;
+    recordId: string;
+    sessionId: string;
+  }>;
+  objectUsageBreakdown: Array<{
+    objectName: string;
+    totalTouches: number;
+    actionBreakdown: {
+      CREATE: number;
+      READ: number;
+      UPDATE: number;
+      DELETE: number;
+      VIEW: number;
+    };
+    trend: 'up' | 'down' | 'stable';
+  }>;
+}

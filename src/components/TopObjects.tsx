@@ -122,12 +122,12 @@ export const TopObjects: React.FC<TopObjectsProps> = ({ overview }) => {
                 </span>
               </div>
 
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-1">
-                  <h4 className="font-medium text-gray-900 hover:text-blue-600 transition-colors">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1 gap-2">
+                  <h4 className="font-medium text-gray-900 hover:text-blue-600 transition-colors truncate">
                     {object.name}
                   </h4>
-                  <span className="text-sm font-semibold text-gray-700">
+                  <span className="text-sm font-semibold text-gray-700 flex-shrink-0">
                     {object.usage?.toLocaleString() || "0"}
                   </span>
                 </div>
