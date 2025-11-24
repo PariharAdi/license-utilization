@@ -109,15 +109,23 @@ export const OverviewTiles: React.FC<OverviewTilesProps> = ({ overview }) => {
             )}
           </div>
 
-          <div>
+          <div className="min-w-0">
             <h3 className="text-sm font-medium text-gray-600 mb-1">
               {tile.title}
             </h3>
-            <p className="text-2xl font-bold text-gray-900 mb-1">
+            <p
+              className="text-2xl font-bold text-gray-900 mb-1 truncate"
+              title={tile.value}
+            >
               {tile.value}
             </p>
             {tile.subtitle && (
-              <p className="text-sm text-gray-500">{tile.subtitle}</p>
+              <p
+                className="text-sm text-gray-500 truncate"
+                title={tile.subtitle}
+              >
+                {tile.subtitle}
+              </p>
             )}
           </div>
         </Link>
